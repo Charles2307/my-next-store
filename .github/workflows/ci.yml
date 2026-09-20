@@ -2,9 +2,14 @@ name: CI
 
 on:
   pull_request:
-    branches: [main]
+    branches: [dev, main]
   push:
-    branches: [main]
+    branches: [dev, main]
+
+# Serialize each branch's checks and deployment without interrupting migrations.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -44,3 +49,83 @@ jobs:
       - run: npm run lint
       - run: npm test -- --run
       - run: npm run build
+
+  deploy:
+    needs: checks
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    environment: ${{ github.ref_name == 'main' && 'production' || 'dev' }}
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      DEPLOY_TARGET: ${{ github.ref_name == 'main' && 'production' || 'preview' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Check deployment credentials
+        run: |
+          for key in VERCEL_ORG_ID VERCEL_PROJECT_ID VERCEL_TOKEN; do
+            if [ -z "${!key}" ]; then
+              echo "::error::Missing GitHub Actions secret: $key"
+              exit 1
+            fi
+          done
+
+      - name: Diagnose Vercel project access
+        run: |
+          node --input-type=module <<'NODE'
+          const keys = ['VERCEL_ORG_ID', 'VERCEL_PROJECT_ID', 'VERCEL_TOKEN'];
+          for (const key of keys) {
+            const value = process.env[key];
+            if (value !== value.trim() || /[\r\n]/.test(value) || /^["']|["']$/.test(value)) {
+              console.log(`::error::${key} contains whitespace or surrounding quotes. Copy the value again into GitHub Secrets.`);
+              process.exit(1);
+            }
+          }
+          const headers = { Authorization: `Bearer ${process.env.VERCEL_TOKEN}` };
+          const project = new URL(`https://api.vercel.com/v9/projects/${encodeURIComponent(process.env.VERCEL_PROJECT_ID)}`);
+          project.searchParams.set('teamId', process.env.VERCEL_ORG_ID);
+          let failed = false;
+          for (const [label, url] of [
+            ['Project access within configured team', project],
+          ]) {
+            try {
+              const response = await fetch(url, { headers, signal: AbortSignal.timeout(15000) });
+              console.log(`${label}: HTTP ${response.status}`);
+              // Do not log response bodies: project settings may contain secrets.
+              if (!response.ok) {
+                failed = true;
+                const advice = {
+                  401: 'Token was rejected. Check whether it is valid and unexpired.',
+                  403: 'Access was denied. Check the token scope and account permissions for the project team.',
+                  404: 'Resource was not found or is not accessible. Check both IDs, project ownership, and token scope.',
+                };
+                console.log(`::error::${label}: ${advice[response.status] ?? 'Vercel API request failed; check Vercel service status and retry.'}`);
+              }
+              await response.body?.cancel();
+            } catch {
+              failed = true;
+              console.log(`::error::${label}: network request failed or timed out.`);
+            }
+          }
+          if (failed) process.exit(1);
+          NODE
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      # Build on Vercel so protected database variables remain available there.
+      # Without --no-wait, the CLI waits for the remote build to finish.
+      - name: Deploy to Vercel after CI passes
+        run: |
+          vercel deploy --yes --target="$DEPLOY_TARGET" \
+            --meta githubDeployment=1 \
+            --meta githubCommitRef="$GITHUB_REF_NAME" \
+            --meta githubCommitSha="$GITHUB_SHA" \
+            --token="$VERCEL_TOKEN"
