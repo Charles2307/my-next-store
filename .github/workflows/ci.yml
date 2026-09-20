@@ -120,16 +120,12 @@ jobs:
       - name: Install Vercel CLI
         run: npm install --global vercel@latest
 
-      - name: Pull environment configuration
-        run: vercel pull --yes --environment="$DEPLOY_TARGET" --git-branch="$GITHUB_REF_NAME" --token="$VERCEL_TOKEN"
-
-      # Vercel build installs dependencies and runs npm run build with the
-      # selected environment's DATABASE_URL, including Prisma migrations.
-      - name: Build and deploy after CI passes
+      # Build on Vercel so protected database variables remain available there.
+      # Without --no-wait, the CLI waits for the remote build to finish.
+      - name: Deploy to Vercel after CI passes
         run: |
-          flags=()
-          if [ "$DEPLOY_TARGET" = production ]; then
-            flags+=(--prod)
-          fi
-          vercel build "${flags[@]}" --token="$VERCEL_TOKEN"
-          vercel deploy --prebuilt --yes "${flags[@]}" --token="$VERCEL_TOKEN"
+          vercel deploy --yes --target="$DEPLOY_TARGET" \
+            --meta githubDeployment=1 \
+            --meta githubCommitRef="$GITHUB_REF_NAME" \
+            --meta githubCommitSha="$GITHUB_SHA" \
+            --token="$VERCEL_TOKEN"
