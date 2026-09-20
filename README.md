@@ -64,7 +64,9 @@ GitHub Actions controls deployments through `.github/workflows/ci.yml`.
    the CLI workflow uses the project IDs and token and does not need that connection.
 
 CI uses only its disposable PostgreSQL service. Once it passes, the deployment job
-pulls the selected Vercel environment, builds, and uploads the result. The build
+uploads the checked-out source and waits for Vercel to build and deploy it using
+the selected environment. The deployment build runs on Vercel so protected database
+variables do not need to be downloaded into GitHub Actions. The build
 script applies Prisma migrations to that environment's database before building
 Next.js, so a failed deployment build can still have applied migrations. Use
 backward-compatible migrations. Deployment runs for a branch are serialized.
