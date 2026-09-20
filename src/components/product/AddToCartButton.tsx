@@ -1,10 +1,20 @@
 "use client";
 
-import useCartStore from "@/store/cartStore";
+import useCartStore, { CartItem } from "@/store/cartStore";
+import { useMemo } from "react";
 
 const SIZES = {
     sm: "px-4 py-2 text-sm",
     md: "px-6 py-3.5 text-base",
+};
+
+type AddToCartButtonProps = {
+    id: number;
+    productName: string;
+    price: number;
+    inStock?: boolean;
+    size?: "sm" | "md";
+    className?: string;
 };
 
 function AddToCartButton({
@@ -14,17 +24,21 @@ function AddToCartButton({
     inStock = true,
     size = "md",
     className = "",
-}) {
+}: AddToCartButtonProps) {
     const cart = useCartStore((state) => state.cart);
     const addToCart = useCartStore((state) => state.addToCart);
-    const quantity = cart.filter((item) => item.id === Number(id)).length;
+    const quantity = useMemo(() => {
+        console.log("Recalculating quantity for", productName);
+        return cart.filter((item) => item.id === Number(id)).length;
+    }, [cart, id]);
 
     function handleAddToCart() {
-        addToCart({
+        const item: CartItem = {
             id,
             productName,
             price,
-        });
+        };
+        addToCart(item);
     }
 
     return (

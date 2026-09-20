@@ -1,10 +1,19 @@
-import Image from "next/image";
 import Link from "next/link";
-
+import {memo} from "react";
 import AddToCartButton from "@/components/product/AddToCartButton";
 import { formatPrice } from "@/lib/format";
 
-function ProductCard({ id, productName, price, inStock, image, category, to }) {
+type ProductCardProps ={
+    id: number,
+    productName:string,
+    price:number,
+    inStock:boolean,
+    category?: string;   // optional — matches the {category && ...} check
+    to:string
+}
+
+function ProductCard({ id, productName, price, inStock, category, to }:ProductCardProps) {
+    console.log("ProductCard rendering:", productName); // temporary — for observing re-renders, remove later
     return (
         <article className="group flex h-full flex-col overflow-hidden rounded-2xl border border-subtle bg-surface shadow-card transition duration-200 hover:-translate-y-0.5 hover:border-accent-border hover:shadow-card-hover">
             <Link
@@ -13,15 +22,6 @@ function ProductCard({ id, productName, price, inStock, image, category, to }) {
                 aria-hidden="true"
                 className="relative block h-56 overflow-hidden bg-white"
             >
-                {image && (
-                    <Image
-                        src={image}
-                        alt=""
-                        fill
-                        sizes="(min-width: 1024px) 25vw, (min-width: 640px) 33vw, 50vw"
-                        className="object-contain p-6 transition duration-300 group-hover:scale-[1.04]"
-                    />
-                )}
             </Link>
 
             <div className="flex flex-auto flex-col gap-2 p-5">
@@ -66,4 +66,4 @@ function ProductCard({ id, productName, price, inStock, image, category, to }) {
     );
 }
 
-export default ProductCard;
+export default memo(ProductCard);
