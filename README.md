@@ -31,6 +31,47 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 
 ## Deploy on Vercel
 
+GitHub Actions controls deployments through `.github/workflows/ci.yml`.
+`vercel.json` disables Vercel's automatic Git deployments so they cannot bypass CI.
+
+| Event | Checks | Deployment after checks pass |
+| --- | --- | --- |
+| Pull request targeting `dev` or `main` | Lint, tests, build with temporary PostgreSQL | None |
+| Push/merge to `dev` | Same checks | Vercel Preview using the dev database |
+| Push/merge to `main` | Same checks | Vercel Production using the production database |
+| Push to a feature branch without a pull request | None | None |
+
+### One-time configuration
+
+1. In Vercel, use the existing Next.js project with Node.js 24, production
+   branch `main`, and build command `npm run build`.
+2. Set `DATABASE_URL` separately in Vercel's environment variables:
+   **Preview** uses the dev database; **Production** uses the production database.
+   A Preview override for branch `dev` is also supported. Vercel's **Development**
+   scope is for local development, not the deployed `dev` branch.
+3. In GitHub, open **Settings → Secrets and variables → Actions** and add repository
+   secrets `VERCEL_TOKEN`, `VERCEL_ORG_ID`, and `VERCEL_PROJECT_ID`. Create a token
+   in Vercel account settings. Find the project ID in Vercel project settings and
+   the team ID (used as `VERCEL_ORG_ID`) in team settings; alternatively, `vercel link`
+   writes both IDs to the ignored `.vercel/project.json` file. Never commit tokens.
+4. Create GitHub environments named `dev` and `production`. Restrict their deployment
+   branches to `dev` and `main`, respectively. Require the `checks` job in branch
+   protection for both branches; do not require the skipped `deploy` job on PRs.
+5. Commit this workflow and `vercel.json` to both `dev` and `main`. Update existing
+   feature branches to include `vercel.json` too: older branches without it can still
+   trigger automatic Vercel deployments. To immediately prevent all automatic Git
+   deployments during setup, disconnect the repository in Vercel's Git settings;
+   the CLI workflow uses the project IDs and token and does not need that connection.
+
+CI uses only its disposable PostgreSQL service. Once it passes, the deployment job
+pulls the selected Vercel environment, builds, and uploads the result. The build
+script applies Prisma migrations to that environment's database before building
+Next.js, so a failed deployment build can still have applied migrations. Use
+backward-compatible migrations. Deployment runs for a branch are serialized.
+
+See [Vercel's GitHub Actions guide](https://vercel.com/kb/guide/how-can-i-use-github-actions-with-vercel)
+and [Git deployment configuration](https://vercel.com/docs/project-configuration/git-configuration).
+
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
