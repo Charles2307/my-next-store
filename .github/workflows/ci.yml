@@ -93,7 +93,6 @@ jobs:
           project.searchParams.set('teamId', process.env.VERCEL_ORG_ID);
           let failed = false;
           for (const [label, url] of [
-            ['Token authentication', 'https://api.vercel.com/v2/user'],
             ['Project access within configured team', project],
           ]) {
             try {
