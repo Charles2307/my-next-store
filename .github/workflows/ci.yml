@@ -2,9 +2,14 @@ name: CI
 
 on:
   pull_request:
-    branches: [main]
+    branches: [dev, main]
   push:
-    branches: [main]
+    branches: [dev, main]
+
+# Serialize each branch's checks and deployment without interrupting migrations.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -44,3 +49,47 @@ jobs:
       - run: npm run lint
       - run: npm test -- --run
       - run: npm run build
+
+  deploy:
+    needs: checks
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    environment: ${{ github.ref_name == 'main' && 'production' || 'dev' }}
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      DEPLOY_TARGET: ${{ github.ref_name == 'main' && 'production' || 'preview' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Check deployment credentials
+        run: |
+          for key in VERCEL_ORG_ID VERCEL_PROJECT_ID VERCEL_TOKEN; do
+            if [ -z "${!key}" ]; then
+              echo "::error::Missing GitHub Actions secret: $key"
+              exit 1
+            fi
+          done
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Pull environment configuration
+        run: vercel pull --yes --environment="$DEPLOY_TARGET" --git-branch="$GITHUB_REF_NAME" --token="$VERCEL_TOKEN"
+
+      # Vercel build installs dependencies and runs npm run build with the
+      # selected environment's DATABASE_URL, including Prisma migrations.
+      - name: Build and deploy after CI passes
+        run: |
+          flags=()
+          if [ "$DEPLOY_TARGET" = production ]; then
+            flags+=(--prod)
+          fi
+          vercel build "${flags[@]}" --token="$VERCEL_TOKEN"
+          vercel deploy --prebuilt --yes "${flags[@]}" --token="$VERCEL_TOKEN"
